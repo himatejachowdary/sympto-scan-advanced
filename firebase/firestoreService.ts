@@ -85,7 +85,7 @@ export const getScanHistory = async (userId: string): Promise<ScanHistoryItem[]>
             analysis: data.analysis,
             // Convert Firestore Timestamp to JS Date
             timestamp: (data.timestamp as Timestamp).toDate(),
-            image: data.image,
+            images: data.images,
             ageAtScan: data.ageAtScan
         });
     });

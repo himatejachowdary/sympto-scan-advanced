@@ -3,6 +3,7 @@ import { StethoscopeIcon } from '../components/icons/StethoscopeIcon';
 import { BrainCircuitIcon } from '../components/icons/BrainCircuitIcon';
 import { MapPinIcon } from '../components/icons/MapPinIcon';
 import { MicrophoneIcon } from '../components/icons/MicrophoneIcon';
+import ThemeToggle from '../components/ThemeToggle';
 
 interface LandingPageProps {
     onGetStarted: () => void;
@@ -21,12 +22,15 @@ const LandingPage: React.FC<LandingPageProps> = ({ onGetStarted }) => {
                                 Symto<span className="text-cyan-500">Scan</span>
                             </h1>
                         </div>
-                        <button
-                            onClick={onGetStarted}
-                            className="px-4 py-2 border border-transparent rounded-full text-sm font-medium text-white bg-cyan-600 hover:bg-cyan-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-50 dark:focus:ring-offset-slate-900 focus:ring-cyan-500 transition-colors"
-                        >
-                            Log In / Sign Up
-                        </button>
+                        <div className="flex items-center gap-2 sm:gap-4">
+                            <ThemeToggle />
+                            <button
+                                onClick={onGetStarted}
+                                className="px-4 py-2 border border-transparent rounded-full text-sm font-medium text-white bg-cyan-600 hover:bg-cyan-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-50 dark:focus:ring-offset-slate-900 focus:ring-cyan-500 transition-colors"
+                            >
+                                Log In / Sign Up
+                            </button>
+                        </div>
                     </header>
 
                     <main className="mt-16 sm:mt-24 text-center">

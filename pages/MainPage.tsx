@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { updateProfile } from 'firebase/auth';
 import { analyzeSymptoms, findNearbyMedicalFacilities } from '../services/geminiService';
 import { getUserProfile, updateUserProfile, addScanToHistory, getScanHistory } from '../firebase/firestoreService';
 import type { Coordinates, Place, CapturedImage, UserProfile, ScanHistoryItem } from '../types';
@@ -16,6 +17,7 @@ import ProfileModal from '../components/ProfileModal';
 import HistoryPanel from '../components/HistoryPanel';
 import { StethoscopeIcon } from '../components/icons/StethoscopeIcon';
 import { ClockIcon } from '../components/icons/ClockIcon';
+import ThemeToggle from '../components/ThemeToggle';
 
 
 const MainPage: React.FC = () => {
@@ -27,8 +29,9 @@ const MainPage: React.FC = () => {
     const [error, setError] = useState<string | null>(null);
     const [location, setLocation] = useState<Coordinates | null>(null);
     const [locationError, setLocationError] = useState<string | null>(null);
-    const [capturedImage, setCapturedImage] = useState<CapturedImage | null>(null);
+    const [capturedImages, setCapturedImages] = useState<CapturedImage[]>([]);
     const [isListening, setIsListening] = useState(false);
+    const IMAGE_LIMIT = 3;
 
     const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
     const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
@@ -100,7 +103,7 @@ const MainPage: React.FC = () => {
     };
 
     const handleScan = async () => {
-        if (!symptoms.trim() && !capturedImage) {
+        if (!symptoms.trim() && capturedImages.length === 0) {
             setError("Please enter symptoms or provide an image.");
             return;
         }
@@ -111,7 +114,7 @@ const MainPage: React.FC = () => {
         setPlaces([]);
 
         try {
-            const analysisResult = await analyzeSymptoms(symptoms, userProfile?.age || null, capturedImage);
+            const analysisResult = await analyzeSymptoms(symptoms, userProfile?.age || null, capturedImages);
             setAnalysis(analysisResult);
 
             if (location) {
@@ -124,7 +127,7 @@ const MainPage: React.FC = () => {
                 const historyItem = {
                     symptoms,
                     analysis: analysisResult,
-                    image: capturedImage,
+                    images: capturedImages,
                     ageAtScan: userProfile?.age || null,
                 };
                 await addScanToHistory(user.uid, historyItem);
@@ -138,27 +141,45 @@ const MainPage: React.FC = () => {
         }
     };
     
-    const handleImageCapture = async (file: File) => {
+    const handleImageCapture = async (files: FileList) => {
+        if (capturedImages.length + files.length > IMAGE_LIMIT) {
+            setError(`You can only upload a maximum of ${IMAGE_LIMIT} images.`);
+            return;
+        }
+
         try {
-            const base64Data = await blobToBase64(file);
-            setCapturedImage({
-                mimeType: file.type,
-                data: base64Data,
+            const newImagesPromises = Array.from(files).map(async (file) => {
+                const base64Data = await blobToBase64(file);
+                return {
+                    mimeType: file.type,
+                    data: base64Data,
+                };
             });
+
+            const newImages = await Promise.all(newImagesPromises);
+            setCapturedImages(prev => [...prev, ...newImages]);
+
         } catch (error) {
-            console.error("Error converting file to base64:", error);
-            setError("Could not process the captured image.");
+            console.error("Error converting files to base64:", error);
+            setError("Could not process the captured images.");
         }
     };
 
-    const handleRemoveImage = () => {
-        setCapturedImage(null);
+    const handleRemoveImage = (indexToRemove: number) => {
+        setCapturedImages(prev => prev.filter((_, index) => index !== indexToRemove));
     };
     
     const handleSaveProfile = async (profileData: UserProfile) => {
         if (user) {
             try {
+                // Update Firebase Auth profile displayName
+                await updateProfile(user, {
+                    displayName: profileData.displayName
+                });
+                
+                // Update Firestore profile document (which stores age)
                 await updateUserProfile(user.uid, user.email!, profileData);
+
                 setUserProfile(profileData);
                 setIsProfileModalOpen(false);
             } catch (error) {
@@ -185,7 +206,7 @@ const MainPage: React.FC = () => {
     const handleSelectHistoryItem = (item: ScanHistoryItem) => {
         setSymptoms(item.symptoms);
         setAnalysis(item.analysis);
-        setCapturedImage(item.image || null);
+        setCapturedImages(item.images || []);
         setPlaces([]); // Places are location-dependent, don't restore them
         setIsHistoryPanelOpen(false);
     };
@@ -202,7 +223,8 @@ const MainPage: React.FC = () => {
                             Symto<span className="text-cyan-500">Scan</span>
                         </h1>
                     </div>
-                     <div className="flex items-center gap-4">
+                     <div className="flex items-center gap-2 sm:gap-4">
+                        <ThemeToggle />
                         <button 
                             onClick={handleHistoryClick} 
                             className="p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
@@ -234,7 +256,7 @@ const MainPage: React.FC = () => {
                             isLoading={isLoading}
                             onImageCapture={handleImageCapture}
                             onRemoveImage={handleRemoveImage}
-                            capturedImage={capturedImage}
+                            capturedImages={capturedImages}
                         />
                         {error && <p className="text-red-500 mt-2 text-center">{error}</p>}
                          {locationError && <p className="text-amber-600 mt-2 text-center">{locationError}</p>}

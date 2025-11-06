@@ -11,11 +11,11 @@ interface SymptomInputProps {
   onChange: (event: React.ChangeEvent<HTMLTextAreaElement>) => void;
   onScan: () => void;
   onVoiceInput: () => void;
-  onImageCapture: (file: File) => void;
-  onRemoveImage: () => void;
+  onImageCapture: (files: FileList) => void;
+  onRemoveImage: (index: number) => void;
   isListening: boolean;
   isLoading: boolean;
-  capturedImage: CapturedImage | null;
+  capturedImages: CapturedImage[];
 }
 
 const SymptomInput: React.FC<SymptomInputProps> = ({
@@ -27,9 +27,10 @@ const SymptomInput: React.FC<SymptomInputProps> = ({
   onRemoveImage,
   isListening,
   isLoading,
-  capturedImage
+  capturedImages
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const IMAGE_LIMIT = 3;
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === 'Enter' && !event.shiftKey) {
@@ -43,9 +44,9 @@ const SymptomInput: React.FC<SymptomInputProps> = ({
   };
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (file) {
-      onImageCapture(file);
+    const files = event.target.files;
+    if (files && files.length > 0) {
+      onImageCapture(files);
     }
      // Reset the input value to allow capturing the same file again
     event.target.value = '';
@@ -62,16 +63,22 @@ const SymptomInput: React.FC<SymptomInputProps> = ({
         rows={3}
         disabled={isLoading}
       />
-      {capturedImage && (
-        <div className="relative w-24 h-24 ml-2 mb-2 rounded-lg overflow-hidden">
-          <img src={`data:${capturedImage.mimeType};base64,${capturedImage.data}`} alt="Symptom capture" className="w-full h-full object-cover" />
-          <button 
-            onClick={onRemoveImage}
-            className="absolute top-1 right-1 bg-black/50 text-white rounded-full p-1 hover:bg-black/75 transition-colors"
-            aria-label="Remove image"
-          >
-            <XMarkIcon className="h-4 w-4" />
-          </button>
+      {capturedImages.length > 0 && (
+        <div className="pl-2 pb-2">
+            <div className="flex gap-3 overflow-x-auto">
+            {capturedImages.map((image, index) => (
+                <div key={index} className="relative w-24 h-24 rounded-lg overflow-hidden flex-shrink-0">
+                <img src={`data:${image.mimeType};base64,${image.data}`} alt={`Symptom capture ${index + 1}`} className="w-full h-full object-cover" />
+                <button 
+                    onClick={() => onRemoveImage(index)}
+                    className="absolute top-1 right-1 bg-black/50 text-white rounded-full p-1 hover:bg-black/75 transition-colors"
+                    aria-label={`Remove image ${index + 1}`}
+                >
+                    <XMarkIcon className="h-4 w-4" />
+                </button>
+                </div>
+            ))}
+            </div>
         </div>
       )}
       <div className="flex items-center justify-between gap-2 sm:gap-4 pl-2">
@@ -83,10 +90,11 @@ const SymptomInput: React.FC<SymptomInputProps> = ({
             accept="image/*"
             capture="environment"
             className="hidden"
+            multiple
             />
           <button
             onClick={handleCameraClick}
-            disabled={isLoading || !!capturedImage}
+            disabled={isLoading || capturedImages.length >= IMAGE_LIMIT}
             className="p-3 rounded-full transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-white dark:focus:ring-offset-slate-800 focus:ring-cyan-500 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-600 dark:text-slate-300 disabled:opacity-50"
             aria-label="Capture image of symptom"
           >
@@ -107,7 +115,7 @@ const SymptomInput: React.FC<SymptomInputProps> = ({
         </div>
         <button
           onClick={onScan}
-          disabled={isLoading || (!value.trim() && !capturedImage)}
+          disabled={isLoading || (!value.trim() && capturedImages.length === 0)}
           className="bg-cyan-500 hover:bg-cyan-600 disabled:bg-slate-400 disabled:dark:bg-slate-600 disabled:cursor-not-allowed text-white font-semibold py-3 px-6 rounded-full transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-white dark:focus:ring-offset-slate-800 focus:ring-cyan-500 flex items-center gap-2"
           aria-label="Scan symptoms"
         >

@@ -25,6 +25,6 @@ export interface ScanHistoryItem {
   symptoms: string;
   analysis: string;
   timestamp: Date;
-  image?: CapturedImage;
+  images?: CapturedImage[];
   ageAtScan: number | null;
 }
