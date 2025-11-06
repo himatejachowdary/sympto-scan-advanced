@@ -1,17 +1,20 @@
 
 import { GoogleGenAI } from "@google/genai";
-import type { Coordinates, Place } from "../types";
+import type { Coordinates, Place, CapturedImage } from "../types";
 
 const getGenAI = () => {
-  if (!process.env.API_KEY) {
-    throw new Error("API_KEY environment variable not set");
+  // Fix: Adhering to guidelines to use process.env.API_KEY directly.
+  const apiKey = process.env.API_KEY;
+  if (!apiKey) {
+    throw new Error("API_KEY environment variable not set. Please ensure it is configured in your environment.");
   }
-  return new GoogleGenAI({ apiKey: process.env.API_KEY });
+  return new GoogleGenAI({ apiKey });
 };
 
 const SYMPTOM_ANALYSIS_SYSTEM_INSTRUCTION = `
 You are a helpful AI assistant for preliminary symptom analysis. You are not a medical professional.
 Your goal is to provide general information based on the described symptoms.
+You may be provided with the user's age and an image of the symptom. Use this information to provide more relevant, age-appropriate general information and potential concerns, but do not treat it as a diagnostic factor. For example, concerns for a child might differ from those for an adult for the same symptom.
 
 **IMPORTANT**: You MUST start your response with a clear and prominent disclaimer on its own line: 'DISCLAIMER: This is not a medical diagnosis. Please consult a healthcare professional for any health concerns.'
 
@@ -21,12 +24,26 @@ Recommend when it might be appropriate to see a doctor (e.g., if symptoms persis
 Keep the language simple, empathetic, and easy to understand. Structure your response with clear headings using Markdown.
 `;
 
-export const analyzeSymptoms = async (symptoms: string): Promise<string> => {
+export const analyzeSymptoms = async (symptoms: string, age: number | null, image: CapturedImage | null): Promise<string> => {
   const ai = getGenAI();
   try {
+    const promptParts: any[] = [];
+    
+    let ageText = age ? ` for a ${age}-year-old` : '';
+    promptParts.push({ text: `Please analyze the following symptoms${ageText}: "${symptoms}"` });
+
+    if (image) {
+      promptParts.push({
+        inlineData: {
+          mimeType: image.mimeType,
+          data: image.data,
+        },
+      });
+    }
+
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash",
-      contents: `Please analyze the following symptoms: "${symptoms}"`,
+      contents: { parts: promptParts },
       config: {
         systemInstruction: SYMPTOM_ANALYSIS_SYSTEM_INSTRUCTION,
       },

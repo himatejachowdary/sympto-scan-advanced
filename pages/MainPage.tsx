@@ -1,185 +1,280 @@
-import React, { useState, useCallback, useEffect } from 'react';
-import type { Coordinates, Place } from '../types';
+
+import React, { useState, useEffect, useCallback } from 'react';
+import { useAuth } from '../context/AuthContext';
 import { analyzeSymptoms, findNearbyMedicalFacilities } from '../services/geminiService';
+import { getUserProfile, updateUserProfile, addScanToHistory, getScanHistory } from '../firebase/firestoreService';
+import type { Coordinates, Place, CapturedImage, UserProfile, ScanHistoryItem } from '../types';
+import { blobToBase64 } from '../utils/imageUtils';
+
 import SymptomInput from '../components/SymptomInput';
 import AnalysisResult from '../components/AnalysisResult';
 import NearbyPlaces from '../components/NearbyPlaces';
 import Loader from '../components/Loader';
-import { StethoscopeIcon } from '../components/icons/StethoscopeIcon';
 import AuthDetails from '../components/AuthDetails';
+import SOSButton from '../components/SOSButton';
+import ProfileModal from '../components/ProfileModal';
+import HistoryPanel from '../components/HistoryPanel';
+import { StethoscopeIcon } from '../components/icons/StethoscopeIcon';
+import { ClockIcon } from '../components/icons/ClockIcon';
 
-// Fix for TypeScript errors: Property 'SpeechRecognition' and 'webkitSpeechRecognition' do not exist on type 'Window'.
-declare global {
-  interface Window {
-    SpeechRecognition: any;
-    webkitSpeechRecognition: any;
-  }
-}
 
 const MainPage: React.FC = () => {
-  const [symptoms, setSymptoms] = useState<string>('');
-  const [analysis, setAnalysis] = useState<string | null>(null);
-  const [places, setPlaces] = useState<Place[]>([]);
-  const [isLoading, setIsLoading] = useState<boolean>(false);
-  const [error, setError] = useState<string | null>(null);
-  const [isListening, setIsListening] = useState<boolean>(false);
-  
-  const speechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-  const recognition = speechRecognition ? new speechRecognition() : null;
+    const { user } = useAuth();
+    const [symptoms, setSymptoms] = useState('');
+    const [analysis, setAnalysis] = useState('');
+    const [places, setPlaces] = useState<Place[]>([]);
+    const [isLoading, setIsLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+    const [location, setLocation] = useState<Coordinates | null>(null);
+    const [locationError, setLocationError] = useState<string | null>(null);
+    const [capturedImage, setCapturedImage] = useState<CapturedImage | null>(null);
+    const [isListening, setIsListening] = useState(false);
 
-  const getLocation = (): Promise<Coordinates> => {
-    return new Promise((resolve, reject) => {
-      if (!navigator.geolocation) {
-        reject(new Error('Geolocation is not supported by your browser.'));
-      } else {
-        navigator.geolocation.getCurrentPosition(
-          (position) => {
-            resolve({
-              latitude: position.coords.latitude,
-              longitude: position.coords.longitude,
+    const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+    const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
+
+    const [scanHistory, setScanHistory] = useState<ScanHistoryItem[]>([]);
+    const [isHistoryPanelOpen, setIsHistoryPanelOpen] = useState(false);
+
+
+    // Fetch user profile
+    useEffect(() => {
+        if (user) {
+            getUserProfile(user.uid).then(profile => {
+                if (profile) {
+                    setUserProfile(profile);
+                } else {
+                    // If no profile exists, prompt user to create one
+                    setIsProfileModalOpen(true);
+                }
             });
-          },
-          () => {
-            reject(new Error('Unable to retrieve your location. Please enable location services.'));
-          }
+        }
+    }, [user]);
+    
+    // Get user location
+    useEffect(() => {
+        navigator.geolocation.getCurrentPosition(
+            (position) => {
+                setLocation({
+                    latitude: position.coords.latitude,
+                    longitude: position.coords.longitude,
+                });
+                setLocationError(null);
+            },
+            (err) => {
+                console.error("Geolocation error:", err);
+                setLocationError("Could not get your location. Nearby facilities search will be disabled.");
+            }
         );
-      }
-    });
-  };
+    }, []);
 
-  const handleScan = async () => {
-    if (!symptoms.trim() || isLoading) return;
+    const handleSpeechRecognition = () => {
+        const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+        if (!SpeechRecognition) {
+            alert("Speech recognition is not supported in your browser.");
+            return;
+        }
 
-    setIsLoading(true);
-    setError(null);
-    setAnalysis(null);
-    setPlaces([]);
+        const recognition = new SpeechRecognition();
+        recognition.continuous = false;
+        recognition.lang = 'en-US';
+        recognition.interimResults = false;
+        recognition.maxAlternatives = 1;
 
-    try {
-      const analysisPromise = analyzeSymptoms(symptoms);
-      
-      let location: Coordinates | null = null;
-      try {
-        location = await getLocation();
-      } catch (locationError: any) {
-        setError(locationError.message);
-      }
+        recognition.onstart = () => setIsListening(true);
+        recognition.onend = () => setIsListening(false);
+        recognition.onerror = (event: any) => {
+            console.error('Speech recognition error:', event.error);
+            setIsListening(false);
+        };
+        recognition.onresult = (event: any) => {
+            const transcript = event.results[0][0].transcript;
+            setSymptoms(prev => prev ? `${prev} ${transcript}` : transcript);
+        };
 
-      const placesPromise = location ? findNearbyMedicalFacilities(symptoms, location) : Promise.resolve([]);
-      
-      const [analysisResult, placesResult] = await Promise.all([analysisPromise, placesPromise]);
-
-      setAnalysis(analysisResult);
-      setPlaces(placesResult);
-
-    } catch (err: any) {
-      setError(`An error occurred: ${err.message}`);
-      console.error(err);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleVoiceInput = useCallback(() => {
-    if (!recognition) {
-        setError("Speech recognition is not supported in this browser.");
-        return;
-    }
-    if (isListening) {
-        recognition.stop();
-        setIsListening(false);
-    } else {
-        recognition.start();
-    }
-  }, [recognition, isListening]);
-
-  useEffect(() => {
-    if (!recognition) return;
-
-    recognition.onstart = () => {
-        setIsListening(true);
+        if (isListening) {
+            recognition.stop();
+        } else {
+            recognition.start();
+        }
     };
 
-    recognition.onresult = (event: any) => {
-        const transcript = Array.from(event.results)
-            .map((result: any) => result[0])
-            .map((result) => result.transcript)
-            .join('');
-        setSymptoms(transcript);
-    };
+    const handleScan = async () => {
+        if (!symptoms.trim() && !capturedImage) {
+            setError("Please enter symptoms or provide an image.");
+            return;
+        }
 
-    recognition.onerror = (event: any) => {
-        setError(`Speech recognition error: ${event.error}`);
-        setIsListening(false);
-    };
+        setIsLoading(true);
+        setError(null);
+        setAnalysis('');
+        setPlaces([]);
 
-    recognition.onend = () => {
-        setIsListening(false);
+        try {
+            const analysisResult = await analyzeSymptoms(symptoms, userProfile?.age || null, capturedImage);
+            setAnalysis(analysisResult);
+
+            if (location) {
+                const nearbyFacilities = await findNearbyMedicalFacilities(symptoms, location);
+                setPlaces(nearbyFacilities);
+            }
+            
+            // Save to history
+            if (user) {
+                const historyItem = {
+                    symptoms,
+                    analysis: analysisResult,
+                    image: capturedImage,
+                    ageAtScan: userProfile?.age || null,
+                };
+                await addScanToHistory(user.uid, historyItem);
+            }
+
+        } catch (err) {
+            console.error(err);
+            setError("An error occurred during the analysis. Please try again.");
+        } finally {
+            setIsLoading(false);
+        }
     };
     
-    return () => {
-        recognition.abort();
+    const handleImageCapture = async (file: File) => {
+        try {
+            const base64Data = await blobToBase64(file);
+            setCapturedImage({
+                mimeType: file.type,
+                data: base64Data,
+            });
+        } catch (error) {
+            console.error("Error converting file to base64:", error);
+            setError("Could not process the captured image.");
+        }
     };
-  }, [recognition]);
 
-  return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-slate-200 flex flex-col items-center p-4 sm:p-6 lg:p-8">
-      <div className="w-full max-w-4xl mx-auto">
-        <header className="flex items-center justify-between gap-3 mb-8 w-full">
-          <div className="flex items-center justify-center gap-3">
-            <StethoscopeIcon className="h-10 w-10 text-cyan-500"/>
-            <h1 className="text-4xl sm:text-5xl font-bold text-slate-900 dark:text-white tracking-tight">
-              Symto<span className="text-cyan-500">Scan</span>
-            </h1>
-          </div>
-          <AuthDetails />
-        </header>
+    const handleRemoveImage = () => {
+        setCapturedImage(null);
+    };
+    
+    const handleSaveProfile = async (profileData: UserProfile) => {
+        if (user) {
+            try {
+                await updateUserProfile(user.uid, user.email!, profileData);
+                setUserProfile(profileData);
+                setIsProfileModalOpen(false);
+            } catch (error) {
+                console.error("Failed to save profile:", error);
+                alert("Could not save your profile. Please try again.");
+            }
+        }
+    };
+    
+    const fetchHistory = useCallback(async () => {
+        if (user) {
+            const history = await getScanHistory(user.uid);
+            setScanHistory(history);
+        }
+    }, [user]);
 
-        <main className="flex flex-col gap-8">
-          <div className="bg-white dark:bg-slate-800/50 p-6 rounded-2xl shadow-lg border border-slate-200 dark:border-slate-700">
-             <p className="text-center text-slate-600 dark:text-slate-400 mb-4">
-              Describe your symptoms below using your voice or keyboard. Our AI will provide preliminary information and help find nearby medical facilities.
-            </p>
-            <SymptomInput
-              value={symptoms}
-              onChange={(e) => setSymptoms(e.target.value)}
-              onScan={handleScan}
-              onVoiceInput={handleVoiceInput}
-              isListening={isListening}
-              isLoading={isLoading}
-            />
-          </div>
+    const handleHistoryClick = () => {
+        if (!isHistoryPanelOpen) {
+            fetchHistory();
+        }
+        setIsHistoryPanelOpen(!isHistoryPanelOpen);
+    };
+    
+    const handleSelectHistoryItem = (item: ScanHistoryItem) => {
+        setSymptoms(item.symptoms);
+        setAnalysis(item.analysis);
+        setCapturedImage(item.image || null);
+        setPlaces([]); // Places are location-dependent, don't restore them
+        setIsHistoryPanelOpen(false);
+    };
 
-          {isLoading && <Loader />}
+    return (
+        <div className="min-h-screen bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-slate-200">
+            <div className="absolute top-0 left-0 w-full h-[300px] bg-gradient-to-br from-cyan-100 to-transparent dark:from-cyan-900/20 z-0"></div>
+            
+            <div className="relative z-10">
+                <header className="p-4 flex justify-between items-center max-w-7xl mx-auto">
+                    <div className="flex items-center gap-3">
+                         <StethoscopeIcon className="h-8 w-8 text-cyan-500" />
+                        <h1 className="text-2xl font-bold text-slate-900 dark:text-white tracking-tight">
+                            Symto<span className="text-cyan-500">Scan</span>
+                        </h1>
+                    </div>
+                     <div className="flex items-center gap-4">
+                        <button 
+                            onClick={handleHistoryClick} 
+                            className="p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+                            aria-label="View scan history"
+                        >
+                            <ClockIcon className="h-6 w-6 text-slate-600 dark:text-slate-300"/>
+                        </button>
+                        <AuthDetails onProfileClick={() => setIsProfileModalOpen(true)} />
+                    </div>
+                </header>
 
-          {error && (
-             <div className="bg-red-100 dark:bg-red-900/50 border border-red-400 dark:border-red-600 text-red-700 dark:text-red-200 px-4 py-3 rounded-xl relative" role="alert">
-              <strong className="font-bold">Error: </strong>
-              <span className="block sm:inline">{error}</span>
+                <main className="max-w-7xl mx-auto p-4">
+                    <div className="text-center mb-10">
+                        <h2 className="text-3xl sm:text-4xl font-extrabold text-slate-900 dark:text-white tracking-tight">
+                            Hello, {userProfile?.displayName || 'there'}!
+                        </h2>
+                        <p className="mt-2 text-lg text-slate-600 dark:text-slate-400 max-w-2xl mx-auto">
+                            Describe your symptoms below to get a preliminary AI analysis.
+                        </p>
+                    </div>
+
+                    <div className="max-w-3xl mx-auto mb-8">
+                         <SymptomInput
+                            value={symptoms}
+                            onChange={(e) => setSymptoms(e.target.value)}
+                            onScan={handleScan}
+                            onVoiceInput={handleSpeechRecognition}
+                            isListening={isListening}
+                            isLoading={isLoading}
+                            onImageCapture={handleImageCapture}
+                            onRemoveImage={handleRemoveImage}
+                            capturedImage={capturedImage}
+                        />
+                        {error && <p className="text-red-500 mt-2 text-center">{error}</p>}
+                         {locationError && <p className="text-amber-600 mt-2 text-center">{locationError}</p>}
+                    </div>
+
+                    {isLoading && <Loader />}
+
+                    <div className="grid grid-cols-1 lg:grid-cols-5 gap-8 items-start">
+                        {analysis && (
+                             <div className="lg:col-span-3">
+                                <AnalysisResult analysisText={analysis} />
+                            </div>
+                        )}
+                        {places.length > 0 && (
+                            <div className="lg:col-span-2">
+                                <NearbyPlaces places={places} />
+                            </div>
+                        )}
+                    </div>
+                </main>
             </div>
-          )}
-
-          <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">
-            {analysis && (
-              <div className="lg:col-span-3">
-                 <AnalysisResult analysisText={analysis} />
-              </div>
-            )}
-            {places.length > 0 && (
-              <div className={analysis ? "lg:col-span-2" : "lg:col-span-5"}>
-                <NearbyPlaces places={places} />
-              </div>
-            )}
-          </div>
-        </main>
-
-         <footer className="text-center mt-12 text-sm text-slate-500 dark:text-slate-400">
-            <p>&copy; {new Date().getFullYear()} SymtoScan. All rights reserved.</p>
-            <p className="mt-1">This tool does not provide medical advice. It is intended for informational purposes only.</p>
-        </footer>
-      </div>
-    </div>
-  );
+            
+            <SOSButton />
+            
+            <ProfileModal 
+                isOpen={isProfileModalOpen}
+                onClose={() => setIsProfileModalOpen(false)}
+                onSave={handleSaveProfile}
+                initialProfile={userProfile}
+            />
+            
+            <HistoryPanel
+                isOpen={isHistoryPanelOpen}
+                onClose={() => setIsHistoryPanelOpen(false)}
+                history={scanHistory}
+                onSelect={handleSelectHistoryItem}
+                onRefresh={fetchHistory}
+            />
+        </div>
+    );
 };
 
 export default MainPage;

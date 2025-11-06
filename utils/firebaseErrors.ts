@@ -25,6 +25,9 @@ export const getFirebaseAuthErrorMessage = (errorCode: string): string => {
         return 'Access to this account has been temporarily disabled due to many failed login attempts. You can try again later.';
     case 'auth/invalid-credential':
         return 'The credential provided is invalid. Please check your email and password.'
+    case 'auth/invalid-api-key':
+    case 'auth/api-key-not-valid.-please-pass-a-valid-api-key.': // Handling the exact error from the logs
+        return 'Invalid Firebase API Key. Please check your firebaseConfig.ts file and ensure it contains a valid configuration from your Firebase project.';
     default:
       console.error('Unhandled Firebase Auth Error:', errorCode);
       return 'An unexpected error occurred. Please try again.';

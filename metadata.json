@@ -2,6 +2,7 @@
   "name": "Symto Scan",
   "description": "An AI-powered symptom analysis tool that provides preliminary information and helps you find nearby medical facilities using your voice or text.",
   "requestFramePermissions": [
-    "geolocation"
+    "geolocation",
+    "camera"
   ]
 }
