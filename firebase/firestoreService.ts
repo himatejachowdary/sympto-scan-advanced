@@ -41,18 +41,18 @@ export const getUserProfile = async (uid: string): Promise<UserProfile | null> =
     }
 };
 
-// SCANS Collection
+// SCANS Subcollection (nested under a user)
 const SCANS_COLLECTION = 'scans';
 
 /**
- * Adds a new scan result to a user's history in Firestore.
+ * Adds a new scan result to a user's history in Firestore as a subcollection.
  * @param userId The ID of the user performing the scan.
  * @param scanData The data for the scan (symptoms, analysis, etc.).
  */
 export const addScanToHistory = async (userId: string, scanData: Omit<ScanHistoryItem, 'id' | 'userId' | 'timestamp'>): Promise<void> => {
     try {
-        await addDoc(collection(db, SCANS_COLLECTION), {
-            userId,
+        const scansCollectionRef = collection(db, USERS_COLLECTION, userId, SCANS_COLLECTION);
+        await addDoc(scansCollectionRef, {
             ...scanData,
             timestamp: serverTimestamp(), // Use server timestamp for consistency
         });
@@ -63,14 +63,14 @@ export const addScanToHistory = async (userId: string, scanData: Omit<ScanHistor
 };
 
 /**
- * Retrieves a user's scan history from Firestore, ordered by most recent.
+ * Retrieves a user's scan history from their subcollection in Firestore, ordered by most recent.
  * @param userId The ID of the user.
  * @returns An array of scan history items.
  */
 export const getScanHistory = async (userId: string): Promise<ScanHistoryItem[]> => {
+    const scansCollectionRef = collection(db, USERS_COLLECTION, userId, SCANS_COLLECTION);
     const scansQuery = query(
-        collection(db, SCANS_COLLECTION),
-        where("userId", "==", userId),
+        scansCollectionRef,
         orderBy("timestamp", "desc")
     );
 
@@ -80,7 +80,7 @@ export const getScanHistory = async (userId: string): Promise<ScanHistoryItem[]>
         const data = doc.data();
         history.push({
             id: doc.id,
-            userId: data.userId,
+            userId: userId, // The userId is from the path, not the document
             symptoms: data.symptoms,
             analysis: data.analysis,
             // Convert Firestore Timestamp to JS Date

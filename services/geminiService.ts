@@ -2,10 +2,11 @@ import { GoogleGenAI } from "@google/genai";
 import type { Coordinates, Place, CapturedImage } from "../types";
 
 const getGenAI = () => {
-  // Fix: Adhering to guidelines to use process.env.API_KEY directly.
-  const apiKey = process.env.API_KEY;
+  // The user provided an API key to use for this session.
+  const apiKey = "AIzaSyD2nq4wBWktds39aYh2ZnVqdqK6zV4bzTg";
   if (!apiKey) {
-    throw new Error("API_KEY environment variable not set. Please ensure it is configured in your environment.");
+    // This check is kept for robustness, though the key is currently hardcoded.
+    throw new Error("API_KEY is not set. Please ensure it is configured.");
   }
   return new GoogleGenAI({ apiKey });
 };
