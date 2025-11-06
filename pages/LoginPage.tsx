@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { signInWithEmailAndPassword } from 'firebase/auth';
+import { signInWithEmailAndPassword, sendPasswordResetEmail } from 'firebase/auth';
 import { auth } from '../firebase/firebaseConfig';
 import { StethoscopeIcon } from '../components/icons/StethoscopeIcon';
 import { getFirebaseAuthErrorMessage } from '../utils/firebaseErrors';
@@ -13,6 +13,11 @@ const LoginPage: React.FC<LoginPageProps> = ({ onSwitchView }) => {
     const [password, setPassword] = useState('');
     const [error, setError] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState(false);
+    const [showReset, setShowReset] = useState(false);
+    const [resetEmail, setResetEmail] = useState('');
+    const [resetMessage, setResetMessage] = useState<string | null>(null);
+    const [resetError, setResetError] = useState<string | null>(null);
+    const [isSendingReset, setIsSendingReset] = useState(false);
 
     const handleLogin = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -26,6 +31,27 @@ const LoginPage: React.FC<LoginPageProps> = ({ onSwitchView }) => {
             setError(errorMessage);
         } finally {
             setIsLoading(false);
+        }
+    };
+
+    const handleSendPasswordReset = async (e?: React.FormEvent) => {
+        if (e) e.preventDefault();
+        setResetMessage(null);
+        setResetError(null);
+        setIsSendingReset(true);
+        try {
+            const targetEmail = (resetEmail || email).trim();
+            if (!targetEmail) {
+                setResetError('Please enter an email address before requesting a password reset.');
+                return;
+            }
+            await sendPasswordResetEmail(auth, targetEmail);
+            setResetMessage('Password reset email sent. Please check your inbox.');
+        } catch (err: any) {
+            const errorMessage = getFirebaseAuthErrorMessage(err.code || '');
+            setResetError(errorMessage);
+        } finally {
+            setIsSendingReset(false);
         }
     };
 
@@ -71,6 +97,28 @@ const LoginPage: React.FC<LoginPageProps> = ({ onSwitchView }) => {
 
                         {error && <p className="text-sm text-red-600 dark:text-red-400 text-center">{error}</p>}
 
+                        <div className="mt-2 text-right">
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setShowReset((s) => {
+                                        const nextState = !s;
+                                        if (nextState) {
+                                            setResetEmail(email);
+                                        } else {
+                                            setResetEmail('');
+                                        }
+                                        return nextState;
+                                    });
+                                    setResetMessage(null);
+                                    setResetError(null);
+                                }}
+                                className="text-sm text-cyan-600 hover:text-cyan-500 focus:outline-none"
+                            >
+                                Forgot password?
+                            </button>
+                        </div>
+
                         <div>
                             <button
                                 type="submit"
@@ -81,6 +129,54 @@ const LoginPage: React.FC<LoginPageProps> = ({ onSwitchView }) => {
                             </button>
                         </div>
                     </form>
+
+                    {showReset && (
+                        <div className="mt-4 p-4 bg-slate-50 dark:bg-slate-700 rounded-md border border-slate-200 dark:border-slate-600">
+                            <div className="space-y-3">
+                                <div>
+                                    <label htmlFor="resetEmail" className="block text-sm font-medium text-slate-700 dark:text-slate-300">Email for reset</label>
+                                    <input
+                                        id="resetEmail"
+                                        name="resetEmail"
+                                        type="email"
+                                        autoComplete="email"
+                                        placeholder="you@example.com"
+                                        required
+                                        value={resetEmail}
+                                        onChange={(e) => setResetEmail(e.target.value)}
+                                        className="mt-1 block w-full px-3 py-2 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-md shadow-sm placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-cyan-500 focus:border-cyan-500 sm:text-sm"
+                                    />
+                                </div>
+
+                                {(resetError || resetMessage) && (
+                                    <p className={`text-sm text-center ${resetError ? 'text-red-600 dark:text-red-400' : 'text-green-700 dark:text-green-300'}`}>{resetError ?? resetMessage}</p>
+                                )}
+
+                                <div className="flex gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => handleSendPasswordReset()}
+                                        disabled={isSendingReset}
+                                        className="flex-1 py-2 px-4 rounded-md text-white bg-cyan-600 hover:bg-cyan-700 disabled:bg-slate-400"
+                                    >
+                                        {isSendingReset ? 'Sending...' : 'Send reset email'}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setShowReset(false);
+                                            setResetEmail('');
+                                            setResetMessage(null);
+                                            setResetError(null);
+                                        }}
+                                        className="flex-1 py-2 px-4 rounded-md border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700"
+                                    >
+                                        Cancel
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
 
                     <p className="mt-6 text-center text-sm text-slate-600 dark:text-slate-400">
                         Don't have an account?{' '}
